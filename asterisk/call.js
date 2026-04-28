@@ -1,100 +1,55 @@
-// asterisk/call.js 
-const { get_bot } = require("../telegram_bot/botInstance");
-const { add_entry_to_memory, pop_unprocessed_line } = require("../utils/entries");
-const { sanitize_phoneNumber } = require("../utils/sanitization");
-const { get_settings } = require("../utils/settings");
-const { ami } = require("./instance");
-const { verifyConsent, addToDNC, checkContactFrequency } = require("../utils/consentManager");
+const ami = require('./instance');
+const Call = require('../models/call');
+const { verifyConsent, incrementContactCount } = require('../utils/consentManager');
 
-let hasLoggedAllContacts = false;
-
-module.exports = async (entry) => {
-  if (!entry) {
-    if (!hasLoggedAllContacts) {
-      const bot = get_bot();
-      const settings = get_settings();
-      
-      bot.sendMessage(
-        settings?.notifications_chat_id,
-        `✅ All contacts have been processed`,
-        { parse_mode: "HTML" }
-      );
-      hasLoggedAllContacts = true;
-    }
-    return;
-  }
-
-  const number = sanitize_phoneNumber(entry?.phoneNumber);
-  const settings = get_settings();
-
-  // Verify consent before calling
-  const hasConsent = await verifyConsent(number);
-  if (!hasConsent) {
-    console.log(`No consent for ${number}, skipping`);
-    require("./call")(pop_unprocessed_line());
-    return;
-  }
-
-  // Check if number is on DNC list
-  const dncRecord = await Contact.findOne({ phoneNumber: number, dnc: true });
-  if (dncRecord) {
-    console.log(`${number} is on DNC list, skipping`);
-    require("./call")(pop_unprocessed_line());
-    return;
-  }
-
-  // Check contact frequency
-  const contactCount = await checkContactFrequency(number);
-  if (contactCount > MAX_CONTACTS_PER_MONTH) {
-    console.log(`Contact limit reached for ${number}, skipping`);
-    require("./call")(pop_unprocessed_line());
-    return;
-  }
-
-  add_entry_to_memory({ ...entry, phoneNumber: number });
-
-  const actionId = `call-${number}-${Date.now()}`;
-
-  console.log(`Initiating contact with ${number}`);
-
-  ami.action(
-    {
-      action: "Originate",
-      channel: `SIP/main/${number}`,
-      context: `outbound-${settings?.agent || "customer_service"}`,
-      exten: number,
-      priority: 1,
-      actionid: actionId,
-      CallerID: number,
-      async: true,
-    },
-    (err, res) => {
-      if (err) {
-        console.error("Originate Error:", err);
-        require("./call")(pop_unprocessed_line());
-      } else {
-        console.log("Originate Response:", res);
+async function makeCall(phoneNumber, agent) {
+    try {
+        // Verify consent exists BEFORE making the call
+        const hasConsent = await verifyConsent(phoneNumber);
         
-        // Log the call attempt
-        Contact.findOneAndUpdate(
-          { phoneNumber: number },
-          {
-            $push: {
-              contactHistory: {
-                timestamp: new Date(),
-                agent: settings?.agent || "customer_service",
-                outcome: "attempted"
-              }
-            },
-            $inc: { contactFrequency: 1 },
-            lastContact: new Date()
-          }
-        ).exec();
-      }
+        if (!hasConsent) {
+            console.log(`No consent found for ${phoneNumber}. Call not initiated.`);
+            return { success: false, reason: 'No consent on record' };
+        }
+        
+        // Check if number is on DNC
+        const contact = await Call.findOne({ phoneNumber, dnc: true });
+        if (contact) {
+            console.log(`${phoneNumber} is on DNC list. Call not initiated.`);
+            return { success: false, reason: 'Number on DNC list' };
+        }
+        
+        // Check contact frequency
+        const canContact = await incrementContactCount(phoneNumber);
+        if (!canContact) {
+            console.log(`Contact frequency limit reached for ${phoneNumber}. Call not initiated.`);
+            return { success: false, reason: 'Contact frequency limit reached' };
+        }
+        
+        // Initiate call only after all checks pass
+        const callResult = await ami.action('Originate', {
+            Channel: `Local/${phoneNumber}@outgoing`,
+            Application: 'Playback',
+            Data: 'sounds/tech_services_intro.wav',
+            CallerID: 'Customer Service',
+            Async: 'true'
+        });
+        
+        if (callResult.response === 'Success') {
+            // Update agent assignment
+            await Call.findOneAndUpdate(
+                { phoneNumber },
+                { agent, lastContacted: new Date() }
+            );
+            
+            return { success: true, callId: callResult.uniqueid };
+        } else {
+            return { success: false, reason: callResult.message };
+        }
+    } catch (error) {
+        console.error('Error making call:', error);
+        return { success: false, reason: error.message };
     }
-  );
+}
 
-  hasLoggedAllContacts = false;
-};
-
-const MAX_CONTACTS_PER_MONTH = 3; // Very conservative limit
+module.exports = { makeCall };
