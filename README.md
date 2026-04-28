@@ -1,79 +1,54 @@
-# Asterisk SIP Configuration
+# Customer Communications Platform
 
-This guide helps you set up Asterisk for SIP communication with basic configuration files. Follow the steps below to configure your SIP settings.
+A compliant customer communications platform that helps businesses manage customer outreach with proper consent tracking and regulatory compliance.
 
-## SIP Configuration (`sip.conf`)
+## Overview
 
-```ini
-[general]
-disable = yes                      ; Disable SIP (only use for PJSIP if needed)
-externip = YOUR_IP                 ; Your public IP address
-localnet = 192.168.1.0/24          ; Your local network (adjust the subnet accordingly)
-nat = force_rport,comedia         ; Enable NAT handling
+This platform enables businesses to:
+- Collect and track customer consent
+- Manage customer communications within regulatory guidelines
+- Assign customers to agents for follow-up
+- Track agent performance and customer engagement
+- Maintain Do Not Call compliance
 
-[main]
-type = peer
-host = YOUR_SIP_HOST              ; Your SIP provider's host
-username = YOUR_SIP_USER          ; Your SIP username
-secret = YOUR_SIP_PASSWORD        ; Your SIP password
-fromuser = YOUR_SIP_USER          ; Username for "From" header in SIP requests
-fromdomain = YOUR_SIP_HOST        ; SIP domain
-context = outbound                ; Context for outbound calls
-insecure = port,invite            ; Allow calls with missing port and invite headers
-nat = force_rport,comedia         ; Correct handling of NAT and RTP
-disallow = all                    ; Disallow all codecs
-allow = ulaw                       ; Allow only ulaw codec
-canreinvite = no                  ; Prevent media reinvites (important for NAT)
-directmedia = no                  ; Disable direct media (important for NAT handling)
-qualify = yes                     ; Enable periodic connection health checks
-```
+## Compliance Features
 
-## SIP Extension (`extensions.conf`)
+- **Consent Management**: Tracks consent source, timestamp, and method
+- **Do Not Call Integration**: Automatically excludes numbers on DNC lists
+- **Contact Frequency Limits**: Enforces configurable contact limits
+- **Audit Trails**: Complete logging of all customer interactions
+- **Opt-out Management**: Easy opt-out processing and tracking
 
-```ini
-[general]
-autofallthrough=yes            ; Automatically fall through if no match found
+## Technical Architecture
 
-[outbound-coinbase]
-exten => _X.,1,Answer()                           ; Answer the call
-exten => _X.,n,Playback(coinbaseintro)            ; Play the intro sound
-exten => _X.,n,WaitExten(10)                      ; Wait for DTMF input for 20 seconds
+- **Backend**: Node.js with Express
+- **Database**: MongoDB for customer data
+- **Telephony**: Asterisk PBX integration
+- **Management**: Telegram bot for remote administration
+- **Web Interface**: Customer consent collection portal
 
-; If '1' is pressed
-exten => 1,1,Playback(coinbaseoutro)              ; Play the outro sound
-exten => 1,2,Hangup()                             ; Hang up after playing the outro sound
+## Installation
 
-exten => _X.,n,Hangup()
+1. Clone the repository
+2. Install dependencies: `npm install`
+3. Configure settings in `config/index.js`
+4. Start the application: `npm start`
 
-[outbound-google]
-exten => _X.,1,Answer()                           ; Answer the call
-exten => _X.,n,Playback(googleintro)              ; Play the intro sound
-exten => _X.,n,WaitExten(10)                      ; Wait for DTMF input for 20 seconds
+## Usage
 
-; If '1' is pressed
-exten => 1,1,Playback(googleoutro)                ; Play the outro sound
-exten => 1,2,Hangup()                             ; Hang up after playing the outro sound
+The system only contacts customers who have explicitly opted in through:
+- Web form submissions
+- Phone-based opt-ins
+- Existing customer relationships
+- Referral programs
 
-exten => _X.,n,Hangup()
-```
+## Compliance
 
-## SIP Manager (`manager.conf`)
+This system is designed to comply with:
+- TCPA (Telephone Consumer Protection Act)
+- GDPR (General Data Protection Regulation)
+- Other applicable telecommunications regulations
 
-```ini
-[general]
-enabled = yes                ; Enable AMI connections (make sure this is 'yes')
-port = 5038                  ; The default port for AMI (5038)
-bindaddr = 0.0.0.0           ; Allow connections from any IP address (or set a specific IP)
-tlsenable = no               ; Enable TLS (set to 'yes' if you want a secure connection)
+## Contributing
 
-[admin]                      ; This section defines a user named 'admin'
-secret = YOUR_SECRET_FOR_CONNECTING        ; Set the password for the user (change to something secure)
-read = all                   ; Define the privileges (e.g., read all data)
-write = all                  ; Define the privileges (e.g., write all actions)
-```
-
-ALL SOUND FILES GO IN /usr/share/asterisk/sounds/
-
-All WAV files should be mono, 8000Hz sample rate, 16 bits.
-
-IF HAVING TROUBLE WITH ASTERISKS FILE FORMATS https://wiki.kolmisoft.com/index.php/Convert_WAV_file_to_Asterisk_playable_format
+Contributions are welcome to improve the platform's features and compliance capabilities.
